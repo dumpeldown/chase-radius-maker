@@ -1,20 +1,37 @@
-# Chase Radius Maker — GitHub Pages site
+# Chase Radius Maker
 
-This folder now contains a minimal GitHub Pages site for the Chase Radius Maker project.
+A specialized mapping utility designed to calculate and display expanding circular boundaries based on the CHASE adventure format popularized by German adventurer [Roofless Cat](https://www.youtube.com/@RooflessCat).
 
-How it was set up by the assistant:
+**Files**
+- `index.html` — application UI and logic
+- `styles.css` — UI styling
 
-- `index.html` — basic landing page
-- `styles.css` — minimal styling
+**Features**
+- Drag the marker to set the center location.
+- Define multiple radii (km) with per-row inputs. Changes apply immediately when the input loses focus.
+- Use the per-radius + / − buttons to insert or remove radii; additions default to +150 km above the selected ring.
+- Save named presets (stored in `localStorage`) and restore or delete them from the Saved Presets list.
+- A code-defined `chasePreset` object in `index.html` is used as the default CHASE PRESET on startup — edit it to set precise center and radii.
+- Share the current preset via a URL (`?preset=`) — the app updates the URL automatically when the center or radii change. Use "Copy Share Link" to copy it.
+- Non-blocking toast notifications for actions (copy/delete).
 
-The assistant also created a `gh-pages` branch, added the remote `https://github.com/dumpeldown/chase-radius-maker`, committed the files and attempted to push the `gh-pages` branch.
+**Keyboard / Accessibility Notes**
+- Tab focuses the numeric radius inputs only; the +/− buttons are excluded from the tab order but are reachable with the mouse.
 
-To verify locally:
+**Developer / Local run**
+From the project root run a simple static server and open the page in your browser:
 
-```powershell
-git status
-git branch --show-current
-git remote -v
+```bash
+python -m http.server 8000
+# then open http://localhost:8000 in your browser
 ```
 
-If you need the site served from the `main` branch or from a `/docs` folder, adjust GitHub Pages settings for the repository on GitHub.
+**Where to edit the default preset**
+Open `index.html` and edit the `chasePreset` object near the top of the script, e.g.:
+
+```js
+const chasePreset = {
+  center: [48.147738, 11.588859],
+  radiiKm: [185, 335, 535, 735, 935]
+};
+```
