@@ -1,9 +1,31 @@
-:root{--bg:#0f1724;--card:#0b1220;--text:#e6eef8;--accent:#6ee7b7}
+/* Full-viewport map styles */
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,var(--bg),#071023);color:var(--text);padding:32px}
-main{max-width:720px;background:rgba(255,255,255,0.03);padding:28px;border-radius:10px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
-h1{font-size:28px;margin-bottom:8px}
-.demo{margin-top:18px;padding:14px;background:rgba(255,255,255,0.02);border-radius:8px}
-footer{margin-top:12px;text-align:center;color:rgba(230,238,248,0.7)}
-code{background:rgba(255,255,255,0.03);padding:3px 6px;border-radius:4px}
+html,body,#map{height:100%}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+#map{width:100%;height:100vh}
+
+/* Optional small footer styling if present */
+footer{position:fixed;right:12px;bottom:8px;color:rgba(0,0,0,0.6);font-size:12px}
+
+/* Controls overlay */
+#controls{position:fixed;left:12px;top:12px;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15);z-index:1000;font-size:13px;display:flex;gap:8px;align-items:center}
+#controls input{width:110px;padding:4px;border:1px solid #ccc;border-radius:4px}
+#controls label{display:flex;gap:6px;align-items:center}
+#controls button{padding:6px 10px;border-radius:4px;border:1px solid #2b6cb0;background:#3182ce;color:white;cursor:pointer}
+#controls button#resetPreset{background:#2d3748;border-color:#2d3748}
+
+/* Per-radius inputs container */
+#radiiList{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;padding:6px 0}
+#radiiList label{font-size:13px}
+#radiiList input{width:90px}
+
+#presetBox{margin-top:8px}
+#presetBox button{padding:6px 10px;border-radius:4px;border:1px solid #2b6cb0;background:#4c7bd9;color:white;cursor:pointer}
+#savedPresetsContainer{margin-top:8px}
+#savedPresets{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+#savedPresets button{padding:6px 8px;border-radius:4px;border:1px solid #2b6cb0;background:#edf2ff;color:#1a202c;cursor:pointer}
+#savedPresets button + button{background:#ffebee;border-color:#ffb4b4}
+
+/* Toast notification */
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(20px);background:rgba(0,0,0,0.85);color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;opacity:0;pointer-events:none;transition:opacity 220ms,transform 220ms;z-index:2000}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}

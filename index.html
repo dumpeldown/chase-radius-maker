@@ -4,16 +4,373 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Chase Radius Maker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <main>
-      <h1>Chase Radius Maker</h1>
-      <p>This repository hosts a simple GitHub Pages site for the Chase Radius Maker project.</p>
-      <section class="demo">
-        <p>Replace this page with your app or point the Pages settings to a folder with your build.</p>
-      </section>
-    </main>
+    <div id="controls">
+      <!-- Lat/Lng inputs removed; center is set by dragging the marker -->
+      <!-- Radius count removed; use per-radius +/- controls below -->
+      <div id="radiiList" aria-live="polite"></div>
+      <!-- Center is set by dragging marker; Update Center removed -->
+      <input id="newPresetName" type="text" placeholder="Preset name" style="width:140px" />
+      <button id="createPreset">Create New Preset</button>
+      <button id="resetPreset">CHASE PRESET</button>
+      <div id="presetBox">
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button id="copyShareLink">Copy Share Link</button>
+        </div>
+      </div>
+      <div id="savedPresetsContainer">
+        <div style="margin-top:8px;font-weight:600">Saved Presets</div>
+        <div id="savedPresets"></div>
+      </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="toast" aria-live="polite" role="status"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // München Englischer Garten approximate coordinates
+      const center = [48.147738, 11.588859];
+
+      // Optional code-defined chase preset.
+      // Edit this object to set a specific preset (center + exact radii in km).
+      // Example: radiiKm are precise values for each ring.
+      const chasePreset = {
+        center: [48.147738, 11.588859],
+        radiiKm: [165, 365, 565, 765, 965]
+      };
+
+      // Initialize map and view
+      const map = L.map('map').setView(center, 6);
+
+      // Add tile layer with simple error logging for troubleshooting
+      const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      tiles.on('tileerror', function (err) {
+        console.warn('Tile load error', err);
+      });
+
+      // Multiple radii support
+
+      // Keep original preset center and radii for reset (from code-defined chasePreset)
+      const originalCenter = (chasePreset && Array.isArray(chasePreset.center)) ? chasePreset.center.slice() : center.slice();
+      const originalCount = (chasePreset && Array.isArray(chasePreset.radiiKm)) ? chasePreset.radiiKm.length : 0;
+
+      // State: circles array
+      let circles = [];
+
+      // Add a draggable marker (pin) at the center
+      const marker = L.marker(center, { draggable: true }).addTo(map).bindPopup('Center');
+
+      // (no automatic base/increment defaults — use `chasePreset` or explicit presets)
+
+      function colorForIndex(i, total) {
+        // Fade from light red to dark red using HSL lightness
+        const t = total > 1 ? i / (total - 1) : 0;
+        const light = 80 - t * 50; // 80% -> 30%
+        return `hsl(0, 80%, ${light}%)`;
+      }
+
+      function clearCircles() {
+        circles.forEach(c => map.removeLayer(c));
+        circles = [];
+      }
+
+      function createCirclesAt(latlng, radiiKm) {
+        clearCircles();
+        const total = radiiKm.length;
+        for (let i = 0; i < total; i++) {
+          const km = radiiKm[i];
+          const c = L.circle(latlng, {
+            radius: km * 1000,
+            color: colorForIndex(i, total),
+            weight: 2,
+            fillColor: colorForIndex(i, total),
+            fillOpacity: 0.12 + (i / Math.max(1, total)) * 0.12,
+          }).addTo(map);
+          circles.push(c);
+        }
+      }
+
+      function setInputs(latlng, radiiKm) {
+        // Update the per-radius inputs to match the provided radii
+        renderRadiiInputs(radiiKm);
+      }
+
+      function updateCenter(lat, lng) {
+        const latlng = L.latLng(lat, lng);
+        marker.setLatLng(latlng);
+        circles.forEach(c => c.setLatLng(latlng));
+        marker.openPopup();
+        setInputs(latlng, circles.map(c => c.getRadius() / 1000));
+        // update current preset center and URL so share link matches
+        try {
+          currentPreset.center = [lat, lng];
+          history.replaceState(null, '', '?preset=' + encodeURIComponent(JSON.stringify(currentPreset)));
+        } catch (e) { /* ignore */ }
+      }
+
+      function updateRadiiFromInputs() {
+        const inputs = Array.from(document.querySelectorAll('.radius-input'));
+        const radii = inputs.map(inp => parseFloat(inp.value)).filter(v => Number.isFinite(v) && v > 0);
+        if (radii.length === 0) {
+          alert('Please provide at least one valid radius in km.');
+          return;
+        }
+        // recreate circles at marker position
+        createCirclesAt(marker.getLatLng(), radii);
+        // keep current zoom but ensure the circles are visible if they're off-screen
+        // (don't zoom out automatically here to respect user's zoom level)
+        // update current preset radii and URL
+        try {
+          currentPreset.radiiKm = radii;
+          history.replaceState(null, '', '?preset=' + encodeURIComponent(JSON.stringify(currentPreset)));
+        } catch (e) {}
+      }
+
+      function renderRadiiInputs(radiiKm) {
+        const container = document.getElementById('radiiList');
+        container.innerHTML = '';
+        radiiKm.forEach((km, idx) => {
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.gap = '6px';
+          row.style.alignItems = 'center';
+
+          const label = document.createElement('span');
+          label.textContent = `R${idx + 1}: `;
+          label.style.minWidth = '36px';
+
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.step = '0.1';
+          input.className = 'radius-input';
+          input.value = km.toFixed(1);
+          input.style.width = '90px';
+          // update radii immediately when user leaves the input
+          input.addEventListener('blur', function () {
+            updateRadiiFromInputs();
+          });
+
+          const addBtn = document.createElement('button');
+          addBtn.textContent = '+';
+          addBtn.title = 'Add radius after this';
+          addBtn.style.width = '30px';
+          addBtn.tabIndex = -1;
+          addBtn.setAttribute('aria-label', 'Add radius after ' + (idx + 1));
+          addBtn.addEventListener('click', function () {
+            const all = Array.from(document.querySelectorAll('.radius-input')).map(i => parseFloat(i.value));
+            const val = Number.isFinite(all[idx]) ? all[idx] + 150 : 150;
+            all.splice(idx + 1, 0, +val.toFixed(1));
+            renderRadiiInputs(all);
+            updateRadiiFromInputs();
+            // focus the newly added input
+            setTimeout(() => {
+              const inputs = document.querySelectorAll('.radius-input');
+              if (inputs[idx + 1]) inputs[idx + 1].focus();
+            }, 0);
+          });
+
+          const delBtn = document.createElement('button');
+          delBtn.textContent = '−';
+          delBtn.title = 'Delete this radius';
+          delBtn.style.width = '30px';
+          delBtn.tabIndex = -1;
+          delBtn.setAttribute('aria-label', 'Delete radius ' + (idx + 1));
+          delBtn.addEventListener('click', function () {
+            const inputs = Array.from(document.querySelectorAll('.radius-input'));
+            if (inputs.length <= 1) { showToast('At least one radius required'); return; }
+            const all = inputs.map(i => parseFloat(i.value));
+            all.splice(idx, 1);
+            renderRadiiInputs(all);
+            updateRadiiFromInputs();
+          });
+
+          row.appendChild(label);
+          row.appendChild(input);
+          row.appendChild(addBtn);
+          row.appendChild(delBtn);
+          container.appendChild(row);
+        });
+      }
+
+      // When marker is dragged, update circles and inputs
+      marker.on('moveend', function (e) {
+        const latlng = e.target.getLatLng();
+        circles.forEach(c => c.setLatLng(latlng));
+        map.fitBounds(L.featureGroup(circles).getBounds(), { padding: [20, 20] });
+        setInputs(latlng, circles.map(c => c.getRadius() / 1000));
+        // update current preset center and URL when user drags the marker
+        try {
+          currentPreset.center = [latlng.lat, latlng.lng];
+          history.replaceState(null, '', '?preset=' + encodeURIComponent(JSON.stringify(currentPreset)));
+        } catch (e) {}
+      });
+
+      // Wire up UI buttons and inputs
+      // Update Center UI removed; center is set by dragging the marker.
+
+      // Radius inputs update automatically on blur (no separate Update Radii button)
+
+      // radiusCount input removed; radii are managed via per-row +/- buttons
+
+      // Preset handling: a preset is { center:[lat,lng], radiiKm:[..] }
+      // Use `chasePreset` from code if present, otherwise fall back to defaults
+      let currentPreset = (typeof chasePreset !== 'undefined' && Array.isArray(chasePreset.radiiKm) && Array.isArray(chasePreset.center))
+        ? { center: chasePreset.center.slice(), radiiKm: chasePreset.radiiKm.slice() }
+        : { center: originalCenter.slice(), radiiKm: [] };
+
+      function applyPreset(preset, fit = false) {
+        if (!preset || !Array.isArray(preset.radiiKm) || !Array.isArray(preset.center)) return;
+        currentPreset = preset;
+        // update address bar so share link matches the applied preset
+        try {
+          history.replaceState(null, '', '?preset=' + encodeURIComponent(JSON.stringify(currentPreset)));
+        } catch (e) { /* ignore */ }
+        createCirclesAt(L.latLng(preset.center), preset.radiiKm);
+        renderRadiiInputs(preset.radiiKm);
+        // update marker and circle positions but do not change zoom unless requested
+        updateCenter(preset.center[0], preset.center[1]);
+        if (fit) {
+          // fit view to include all rings (may change zoom)
+          map.fitBounds(L.featureGroup(circles).getBounds(), { padding: [20, 20] });
+        } else {
+          // just pan to center keeping current zoom
+          map.panTo(L.latLng(preset.center));
+        }
+      }
+
+      function presetToUrl(preset) {
+        try {
+          const s = encodeURIComponent(JSON.stringify(preset));
+          return location.origin + location.pathname + '?preset=' + s;
+        } catch (e) { return location.href; }
+      }
+
+      function loadPresetFromUrl() {
+        const params = new URLSearchParams(location.search);
+        if (!params.has('preset')) return false;
+        try {
+          const p = JSON.parse(decodeURIComponent(params.get('preset')));
+          if (p && Array.isArray(p.radiiKm) && Array.isArray(p.center)) {
+            // when loading from URL on page load, fit to bounds so the user sees everything
+            applyPreset(p, true);
+            return true;
+          }
+        } catch (e) { console.warn('invalid preset in URL', e); }
+        return false;
+      }
+
+      function loadSavedPresets() {
+        try {
+          const raw = localStorage.getItem('racevis_presets') || '{}';
+          return JSON.parse(raw);
+        } catch (e) { return {}; }
+      }
+
+      function savePreset(name, preset) {
+        const all = loadSavedPresets();
+        all[name] = preset;
+        localStorage.setItem('racevis_presets', JSON.stringify(all));
+        renderSavedPresets();
+      }
+
+      function deletePreset(name) {
+        const all = loadSavedPresets();
+        delete all[name];
+        localStorage.setItem('racevis_presets', JSON.stringify(all));
+        renderSavedPresets();
+      }
+
+      function renderSavedPresets() {
+        const container = document.getElementById('savedPresets');
+        if (!container) return;
+        const all = loadSavedPresets();
+        container.innerHTML = '';
+        Object.keys(all).forEach(name => {
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.gap = '6px';
+          row.style.alignItems = 'center';
+          const btn = document.createElement('button');
+          btn.textContent = name;
+          btn.addEventListener('click', () => {
+            // restore saved preset without changing user's zoom level
+            applyPreset(all[name], false);
+          });
+          const del = document.createElement('button');
+          del.textContent = '✕';
+          del.title = 'Delete preset';
+          del.addEventListener('click', () => {
+            deletePreset(name);
+            showToast('Preset "' + name + '" removed');
+          });
+          row.appendChild(btn);
+          row.appendChild(del);
+          container.appendChild(row);
+        });
+      }
+
+      document.getElementById('createPreset').addEventListener('click', function () {
+        const name = (document.getElementById('newPresetName').value || '').trim();
+        if (!name) { alert('Enter a name for the preset.'); return; }
+        const preset = { center: [marker.getLatLng().lat, marker.getLatLng().lng], radiiKm: circles.map(c => +(c.getRadius()/1000).toFixed(1)) };
+        savePreset(name, preset);
+        // clear the preset name input after saving
+        document.getElementById('newPresetName').value = '';
+      });
+
+      // (preset JSON textarea and apply button removed)
+
+      document.getElementById('copyShareLink').addEventListener('click', function () {
+        const url = presetToUrl(currentPreset);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(() => showToast('Share link copied to clipboard'))
+            .catch(() => showToast('Could not copy link to clipboard'));
+        } else {
+          showToast('Could not copy link to clipboard');
+        }
+      });
+
+      document.getElementById('resetPreset').addEventListener('click', function () {
+        // CHASE PRESET should always apply the code-defined chasePreset if present,
+        // otherwise fall back to the currentPreset. Do not change zoom when toggling.
+        const target = (typeof chasePreset !== 'undefined' && Array.isArray(chasePreset.radiiKm) && Array.isArray(chasePreset.center)) ? chasePreset : currentPreset;
+        applyPreset(target, false);
+      });
+
+      // Toast helper
+      let _toastTimer = null;
+      function showToast(msg, ms = 2000) {
+        const el = document.getElementById('toast');
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.add('show');
+        if (_toastTimer) clearTimeout(_toastTimer);
+        _toastTimer = setTimeout(() => { el.classList.remove('show'); _toastTimer = null; }, ms);
+      }
+
+      // On load: if URL contains a preset, apply it; otherwise apply the code-defined chasePreset (currentPreset)
+      const loaded = loadPresetFromUrl();
+      if (!loaded) applyPreset(currentPreset, true);
+
+      // Render saved presets list
+      renderSavedPresets();
+
+      // Ensure marker popup and view fit current circles
+      if (circles.length) {
+        marker.openPopup();
+        map.fitBounds(L.featureGroup(circles).getBounds(), { padding: [20, 20] });
+      }
+    </script>
+
     <footer>
       <small>Hosted on GitHub Pages — branch: <code>gh-pages</code></small>
     </footer>
